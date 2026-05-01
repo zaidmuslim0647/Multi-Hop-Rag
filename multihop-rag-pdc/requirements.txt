@@ -1,0 +1,12 @@
+datasets
+faiss-cpu
+sentence-transformers
+google-generativeai
+numpy
+pandas
+matplotlib
+tqdm
+tiktoken
+scipy
+jupyter
+ipykernel
