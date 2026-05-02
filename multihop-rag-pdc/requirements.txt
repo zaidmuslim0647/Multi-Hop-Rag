@@ -1,7 +1,7 @@
 datasets
 faiss-cpu
 sentence-transformers
-google-generativeai
+openai
 numpy
 pandas
 matplotlib

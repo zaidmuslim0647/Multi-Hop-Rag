@@ -11,7 +11,7 @@ LOG_DIR = os.path.join(BASE_DIR, "results/latency_logs")
 ACCURACY_DIR = os.path.join(BASE_DIR, "results/accuracy_logs")
 PLOT_DIR = os.path.join(BASE_DIR, "results/plots")
 CORPUS_DIR = os.path.join(BASE_DIR, "data/corpus")
-GEMINI_CALLS_LOG = os.path.join(BASE_DIR, "results/gemini_calls.json")
+LLM_CALLS_LOG = os.path.join(BASE_DIR, "results/llm_calls.json")
 
 # Chunking
 CHUNK_SIZE = 512       # tokens
@@ -22,13 +22,12 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
 # Retrieval
-TOP_K = 5
+TOP_K = 3
 
-# Gemini
-GEMINI_MODEL = "gemini-1.5-flash"
-GEMINI_RPM_LIMIT = 15      # free tier: 15 requests/minute
-GEMINI_DAILY_LIMIT = 1500
-GEMINI_SAFE_DAILY_LIMIT = 1400  # stop before hitting the real cap
+# Local LLM (Ollama, OpenAI-compatible API)
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+OLLAMA_MODEL = "qwen2.5:3b"
+OLLAMA_API_KEY = "ollama"  # placeholder — Ollama ignores it but the OpenAI client requires one
 
 # PDC benchmark — i5-11th gen: 4 cores / 8 threads
 PROCESS_COUNTS = [1, 2, 4]

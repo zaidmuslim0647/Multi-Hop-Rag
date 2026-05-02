@@ -17,7 +17,6 @@ def exact_match(pred: str, gold: str) -> float:
     gold_n = _normalize(gold)
     if pred_n == gold_n:
         return 1.0
-    # numeric tolerance
     try:
         return 1.0 if abs(float(pred_n) - float(gold_n)) < 1e-4 else 0.0
     except ValueError:
@@ -38,29 +37,70 @@ def token_f1(pred: str, gold: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def _load_checkpoint(log_path: str) -> tuple[set, list]:
+    """Returns (completed_ids, existing_records) from a JSONL checkpoint file.
+    Dedupes by id — keeps the LAST record per id (so a re-run that overwrote
+    a previous attempt wins). Records without an id are dropped."""
+    by_id = {}
+    if log_path and os.path.exists(log_path):
+        with open(log_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    rid = r.get("id", "")
+                    if not rid:
+                        continue
+                    by_id[rid] = r
+                except Exception:
+                    pass
+    return set(by_id.keys()), list(by_id.values())
+
+
 def evaluate_dataset(questions: list, run_fn, log_path: str = None) -> dict:
     """
-    questions: list of normalized sample dicts with "question" and "answer"
-    run_fn: callable(question_str) -> answer_str
-    log_path: JSONL file to append results incrementally (never hold in memory only)
+    Evaluates questions with full checkpoint/resume support.
+    - Reads log_path on start, skips already-completed question IDs.
+    - Writes each result immediately after completion.
+    - Re-raises RuntimeError (daily quota exhausted) so the notebook stops cleanly.
     """
-    em_scores = []
-    f1_scores = []
-    latencies_ms = []
+    # --- checkpoint resume ---
+    completed_ids, prior_records = _load_checkpoint(log_path)
+    if completed_ids:
+        print(f"[checkpoint] resuming — {len(completed_ids)} done, "
+              f"{len(questions) - len(completed_ids)} remaining")
+
+    # seed running scores from prior records
+    em_scores = [r["em"] for r in prior_records]
+    f1_scores = [r["f1"] for r in prior_records]
+    latencies_ms = [r["latency_ms"] for r in prior_records]
+    errors = 0
+    total = len(questions)
+    done = len(completed_ids)
 
     if log_path:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     for sample in questions:
+        if sample.get("id", "") in completed_ids:
+            continue
+
+        done += 1
         q = sample["question"]
         gold = sample["answer"]
 
         t0 = time.perf_counter()
+        pred = ""
         try:
             pred = run_fn(q)
+        except RuntimeError:
+            # hard stop: daily quota exhausted — propagate so the notebook cell fails visibly
+            raise
         except Exception as e:
-            pred = ""
-            print(f"[WARN] run_fn failed for '{q[:60]}': {e}")
+            errors += 1
+            print(f"[WARN {done}/{total}] {type(e).__name__}: {e}")
 
         latency_ms = (time.perf_counter() - t0) * 1000
         em = exact_match(pred, gold)
@@ -83,9 +123,14 @@ def evaluate_dataset(questions: list, run_fn, log_path: str = None) -> dict:
             with open(log_path, "a") as f:
                 f.write(json.dumps(record) + "\n")
 
+        if done % 10 == 0:
+            print(f"  [{done}/{total}] em={sum(em_scores)/len(em_scores):.3f}  "
+                  f"f1={sum(f1_scores)/len(f1_scores):.3f}  errors={errors}")
+
     return {
         "em": sum(em_scores) / len(em_scores) if em_scores else 0.0,
         "f1": sum(f1_scores) / len(f1_scores) if f1_scores else 0.0,
         "avg_latency_ms": sum(latencies_ms) / len(latencies_ms) if latencies_ms else 0.0,
-        "n": len(questions),
+        "n": total,
+        "errors": errors,
     }

@@ -1,56 +1,36 @@
 import time
-import json
-import os
-from datetime import date
-import google.generativeai as genai
-from config import GEMINI_MODEL, GEMINI_RPM_LIMIT, GEMINI_SAFE_DAILY_LIMIT, GEMINI_CALLS_LOG
-
-
-class DailyCallTracker:
-    def __init__(self, limit: int = GEMINI_SAFE_DAILY_LIMIT, log_path: str = GEMINI_CALLS_LOG):
-        self.limit = limit
-        self.log_path = log_path
-
-    def _load(self) -> dict:
-        if os.path.exists(self.log_path):
-            with open(self.log_path) as f:
-                return json.load(f)
-        return {}
-
-    def _save(self, data: dict):
-        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
-        with open(self.log_path, "w") as f:
-            json.dump(data, f)
-
-    def check_and_increment(self):
-        today = str(date.today())
-        data = self._load()
-        count = data.get(today, 0)
-        if count >= self.limit:
-            raise RuntimeError(
-                f"Gemini daily call limit reached ({count}/{self.limit}). Stopping to protect quota."
-            )
-        data[today] = count + 1
-        self._save(data)
-
-    def today_count(self) -> int:
-        today = str(date.today())
-        return self._load().get(today, 0)
+from openai import OpenAI
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_API_KEY
 
 
 class GeminiGenerator:
-    def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(GEMINI_MODEL)
-        self._last_call = 0.0
-        self._min_interval = 60.0 / GEMINI_RPM_LIMIT  # 4 s between calls
-        self._tracker = DailyCallTracker()
+    """Local Ollama generator (OpenAI-compatible). Name kept for import compatibility."""
+
+    def __init__(self, api_key: str = None):
+        self._client = OpenAI(base_url=OLLAMA_BASE_URL, api_key=api_key or OLLAMA_API_KEY)
+        self._call_count = 0
 
     def generate(self, prompt: str) -> str:
-        self._tracker.check_and_increment()
-        elapsed = time.perf_counter() - self._last_call
-        if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
-        response = self.model.generate_content(prompt)
-        self._last_call = time.perf_counter()
-        return response.text
+        self._call_count += 1
+        for attempt in range(3):
+            try:
+                response = self._client.chat.completions.create(
+                    model=OLLAMA_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    max_tokens=128,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                msg = str(e)
+                if "Connection" in msg or "connect" in msg.lower():
+                    wait = 5 * (attempt + 1)
+                    print(f"[ollama connection retry] attempt {attempt+1}/3, waiting {wait}s...")
+                    time.sleep(wait)
+                else:
+                    raise
+
+        raise RuntimeError("Ollama: max retries exceeded — is the server running?")
+
+    def call_count(self) -> int:
+        return self._call_count
