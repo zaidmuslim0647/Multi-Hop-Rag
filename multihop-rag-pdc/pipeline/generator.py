@@ -10,7 +10,7 @@ class GeminiGenerator:
         self._client = OpenAI(base_url=OLLAMA_BASE_URL, api_key=api_key or OLLAMA_API_KEY)
         self._call_count = 0
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, max_tokens: int = 128) -> str:
         self._call_count += 1
         for attempt in range(3):
             try:
@@ -18,7 +18,7 @@ class GeminiGenerator:
                     model=OLLAMA_MODEL,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
-                    max_tokens=128,
+                    max_tokens=max_tokens,
                 )
                 return response.choices[0].message.content
             except Exception as e:
