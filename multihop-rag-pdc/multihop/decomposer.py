@@ -63,7 +63,7 @@ def decompose(question: str, generator) -> list:
     Falls back to single-hop on parse failure.
     """
     prompt = DECOMPOSE_PROMPT.format(question=question)
-    raw = generator.generate(prompt)
+    raw = generator.generate(prompt, max_tokens=400)
     try:
         sub_queries = _validate(_parse_json(raw))
         if sub_queries:
@@ -74,7 +74,7 @@ def decompose(question: str, generator) -> list:
 
     # retry with stricter prompt
     try:
-        raw2 = generator.generate(DECOMPOSE_STRICT_PROMPT.format(question=question))
+        raw2 = generator.generate(DECOMPOSE_STRICT_PROMPT.format(question=question), max_tokens=400)
         sub_queries = _validate(_parse_json(raw2))
         if sub_queries:
             return sub_queries
