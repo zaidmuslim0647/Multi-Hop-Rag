@@ -36,13 +36,16 @@ def parallel_build_index(embeddings: np.ndarray, n_processes: int, tmp_dir: str 
     with ctx.Pool(processes=n_processes) as pool:
         shard_paths = pool.map(_build_local_index, args)
 
-    # merge all shards — FAISS indices are not picklable; we pass file paths
+    # merge all shards — FAISS indices are not picklable; we pass file paths.
+    # IndexFlatL2 has no merge_from(), so reconstruct vectors and re-add.
     merged = faiss.read_index(shard_paths[0])
+    os.remove(shard_paths[0])
     for path in shard_paths[1:]:
         shard_index = faiss.read_index(path)
-        faiss.merge_from(merged, shard_index, merged.ntotal)
+        if shard_index.ntotal > 0:
+            shard_vecs = shard_index.reconstruct_n(0, shard_index.ntotal)
+            merged.add(shard_vecs)
         os.remove(path)
-    os.remove(shard_paths[0])
 
     return merged
 
